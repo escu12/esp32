@@ -5,7 +5,7 @@
 #   GPIO18→SCK  GPIO23→MOSI  GPIO19→MISO
 #   GPIO4→GDO0 (pin 3) TX    GPIO2→GDO2 (pin 8) RX
 #
-# TX: transmit_raw desde captura Flipper BinRAW (152bit, TE=356µs)
+# TX: transmit_raw Flipper BinRAW — apagada TE=342µs, encendida TE=346µs
 
 esphome:
   name: transceptor-rf
