@@ -177,9 +177,9 @@ output:
           if (id(luz_nivel_prev) == 0) return;
           float ct = state;
           int color = 1;
-          if (ct < 3500.0f) color = 0;
-          else if (ct < 5000.0f) color = 1;
-          else color = 2;
+          if (ct > 0.66f) color = 0;
+          else if (ct < 0.34f) color = 2;
+          else color = 1;
           if (color == id(luz_color_prev)) return;
           const char *key;
           int te;
