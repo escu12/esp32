@@ -140,12 +140,56 @@ output:
     id: luz_br_out
     type: float
     write_action:
-      - lambda: "return;"
+      - lambda: !lambda |-
+          float br = state;
+          int nivel = 0;
+          if (br > 0.01f) {
+            nivel = (int) (br * 9.0f + 0.5f);
+            if (nivel < 1) nivel = 1;
+            if (nivel > 9) nivel = 9;
+          }
+          if (nivel == id(luz_nivel_prev)) return;
+          if (nivel == 0) {
+            id(flipper_raw_tx).execute("${light_off_key}", ${light_off_te});
+            id(luz_nivel_prev) = 0;
+            return;
+          }
+          const char *key;
+          int te;
+          switch (nivel) {
+            case 1: key = "${light_l1_key}"; te = ${light_l1_te}; break;
+            case 2: key = "${light_l2_key}"; te = ${light_l2_te}; break;
+            case 3: key = "${light_l3_key}"; te = ${light_l3_te}; break;
+            case 4: key = "${light_l4_key}"; te = ${light_l4_te}; break;
+            case 5: key = "${light_l5_key}"; te = ${light_l5_te}; break;
+            case 6: key = "${light_l6_key}"; te = ${light_l6_te}; break;
+            case 7: key = "${light_l7_key}"; te = ${light_l7_te}; break;
+            case 8: key = "${light_l8_key}"; te = ${light_l8_te}; break;
+            default: key = "${light_l9_key}"; te = ${light_l9_te}; break;
+          }
+          id(flipper_raw_tx).execute(key, te);
+          id(luz_nivel_prev) = nivel;
   - platform: template
     id: luz_ct_out
     type: float
     write_action:
-      - lambda: "return;"
+      - lambda: !lambda |-
+          if (id(luz_nivel_prev) == 0) return;
+          float ct = state;
+          int color = 1;
+          if (ct < 3500.0f) color = 0;
+          else if (ct < 5000.0f) color = 1;
+          else color = 2;
+          if (color == id(luz_color_prev)) return;
+          const char *key;
+          int te;
+          switch (color) {
+            case 0: key = "${light_warm_key}"; te = ${light_warm_te}; break;
+            case 2: key = "${light_cold_key}"; te = ${light_cold_te}; break;
+            default: key = "${light_neutral_key}"; te = ${light_neutral_te}; break;
+          }
+          id(flipper_raw_tx).execute(key, te);
+          id(luz_color_prev) = color;
 
 script:
   - id: flipper_raw_tx
@@ -244,60 +288,3 @@ light:
     warm_white_color_temperature: 2700 K
     gamma_correct: 0
     restore_mode: ALWAYS_OFF
-    on_state:
-      - lambda: !lambda |-
-          float br = x.current_values.get_brightness();
-          float ct = x.current_values.get_color_temperature();
-
-          int nivel = 0;
-          if (br > 0.01f) {
-            nivel = (int) (br * 9.0f + 0.5f);
-            if (nivel < 1) nivel = 1;
-            if (nivel > 9) nivel = 9;
-          }
-
-          int color = 1;
-          if (ct < 3500.0f) color = 0;
-          else if (ct < 5000.0f) color = 1;
-          else color = 2;
-
-          bool nivel_cambio = (nivel != id(luz_nivel_prev));
-          bool color_cambio = (color != id(luz_color_prev));
-
-          if (nivel == 0) {
-            if (!nivel_cambio && !color_cambio) return;
-            id(flipper_raw_tx).execute("${light_off_key}", ${light_off_te});
-            id(luz_nivel_prev) = 0;
-            return;
-          }
-
-          if (nivel_cambio) {
-            const char *key;
-            int te;
-            switch (nivel) {
-              case 1: key = "${light_l1_key}"; te = ${light_l1_te}; break;
-              case 2: key = "${light_l2_key}"; te = ${light_l2_te}; break;
-              case 3: key = "${light_l3_key}"; te = ${light_l3_te}; break;
-              case 4: key = "${light_l4_key}"; te = ${light_l4_te}; break;
-              case 5: key = "${light_l5_key}"; te = ${light_l5_te}; break;
-              case 6: key = "${light_l6_key}"; te = ${light_l6_te}; break;
-              case 7: key = "${light_l7_key}"; te = ${light_l7_te}; break;
-              case 8: key = "${light_l8_key}"; te = ${light_l8_te}; break;
-              default: key = "${light_l9_key}"; te = ${light_l9_te}; break;
-            }
-            id(flipper_raw_tx).execute(key, te);
-            id(luz_nivel_prev) = nivel;
-            return;
-          }
-
-          if (color_cambio) {
-            const char *key;
-            int te;
-            switch (color) {
-              case 0: key = "${light_warm_key}"; te = ${light_warm_te}; break;
-              case 2: key = "${light_cold_key}"; te = ${light_cold_te}; break;
-              default: key = "${light_neutral_key}"; te = ${light_neutral_te}; break;
-            }
-            id(flipper_raw_tx).execute(key, te);
-            id(luz_color_prev) = color;
-          }
