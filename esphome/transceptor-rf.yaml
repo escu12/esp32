@@ -1,8 +1,9 @@
-# Transceptor RF simple — CC1101 + ESP32 (DOIT DevKit V1)
+# Transceptor RF — CC1101 + ESP32 (DOIT DevKit V1) — modo dual-pin
 #
-# Cableado (tu pinout):
-#   GND→GND  3.3V→VCC  GPIO4→GDO0  GPIO5→CSN
-#   GPIO18→SCK  GPIO23→MOSI  GPIO19→MISO  GDO2→N/C
+# Cableado:
+#   GND→GND  3.3V→VCC  GPIO5→CSN (pin 4)
+#   GPIO18→SCK (pin 5)  GPIO23→MOSI (pin 6)  GPIO19→MISO (pin 7)
+#   GPIO4→GDO0 (pin 3)  TX    GPIO2→GDO2 (pin 8)  RX
 #
 # Cómo usar:
 #   1. Instala y abre Logs
@@ -59,17 +60,10 @@ cc1101:
   modulation_type: ASK/OOK
   output_power: 10
 
-# GDO2 sin conectar → TX y RX comparten GPIO4 (open-drain)
+# Dual-pin (recomendado): GDO0=TX (GPIO4), GDO2=RX (GPIO2)
 # RMT del ESP32: 512 símbolos compartidos RX+TX → 256+256
 remote_receiver:
-  pin:
-    number: GPIO4
-    mode:
-      input: true
-      output: true
-      pullup: true
-      open_drain: true
-    allow_other_uses: true
+  pin: GPIO2
   dump:
     - rc_switch
     # Añade "raw" solo al aprender códigos nuevos (genera mucha carga en logs/API)
@@ -82,29 +76,15 @@ remote_receiver:
   filter_symbols: 48
 
 remote_transmitter:
-  pin:
-    number: GPIO4
-    mode:
-      input: true
-      output: true
-      pullup: true
-      open_drain: true
-    allow_other_uses: true
+  pin: GPIO4
   carrier_duty_percent: 100%
-  eot_level: false
   rmt_symbols: 256
   on_transmit:
     then:
-      - cc1101.set_idle:
-          id: rf_radio
-      - remote_transmitter.digital_write: false
       - cc1101.begin_tx:
           id: rf_radio
   on_complete:
     then:
-      - cc1101.set_idle:
-          id: rf_radio
-      - remote_transmitter.digital_write: true
       - cc1101.begin_rx:
           id: rf_radio
 
