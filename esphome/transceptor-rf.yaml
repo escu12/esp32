@@ -124,20 +124,20 @@ remote_receiver:
   on_rc_switch:
     then:
       - lambda: |-
-          char buf[64];
-          snprintf(buf, sizeof(buf), "%llu", (unsigned long long) x.code);
           std::string bits;
-          for (int i = x.nbits - 1; i >= 0; i--) {
+          for (int i = 63; i >= 0; i--) {
             bits += ((x.code >> i) & 1) ? '1' : '0';
+          }
+          const size_t start = bits.find('1');
+          if (start != std::string::npos) {
+            bits = bits.substr(start);
           }
           id(g_rc_code) = bits;
           id(g_rc_protocol) = x.protocol;
           id(txt_rc_switch).publish_state(
             "proto=" + std::to_string(x.protocol) + " data=" + bits);
-          ESP_LOGI("rf", "RC-SWITCH proto=%d nbits=%d data=%s code=0x%llX",
-                   x.protocol, x.nbits, bits.c_str(), (unsigned long long) x.code);
-          ESP_LOGI("rf", "Para boton RC: transmit_rc_switch_raw code='%s' protocol=%d",
-                   bits.c_str(), x.protocol);
+          ESP_LOGI("rf", "RC-SWITCH proto=%d data=%s code=0x%llX",
+                   x.protocol, bits.c_str(), (unsigned long long) x.code);
 
 remote_transmitter:
   id: rf_tx
@@ -219,7 +219,11 @@ script:
             code.push_back((i % 2 == 0) ? mag : -mag);
           }
           const int reps = repeat_count > 0 ? repeat_count : 3;
-          id(rf_tx).transmit(code, reps, 50000);
+          auto call = id(rf_tx).transmit();
+          call.set_raw(code);
+          call.set_send_times(reps);
+          call.set_send_wait(50000);
+          call.perform();
 
   - id: tx_last_hex
     then:
@@ -235,12 +239,17 @@ script:
           condition:
             lambda: 'return !id(g_rc_code).empty();'
           then:
-            - remote_transmitter.transmit_rc_switch_raw:
-                code: !lambda 'return id(g_rc_code);'
-                protocol: !lambda 'return id(g_rc_protocol);'
-                repeat:
-                  times: 10
-                  wait_time: 10ms
+            - lambda: |-
+                uint8_t proto = id(g_rc_protocol);
+                if (proto > 8) proto = 1;
+                const std::string bits = id(g_rc_code);
+                const uint64_t code = esphome::remote_base::decode_binary_string(bits);
+                const uint8_t nbits = bits.size();
+                auto call = id(rf_tx).transmit();
+                esphome::remote_base::RC_SWITCH_PROTOCOLS[proto].transmit(call.get_data(), code, nbits);
+                call.set_send_times(10);
+                call.set_send_wait(10000);
+                call.perform();
 
 button:
   - platform: template
