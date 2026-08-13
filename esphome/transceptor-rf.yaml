@@ -1,18 +1,6 @@
-# Transceptor RF genérico — CC1101 + ESP32 (cualquier mando 433 MHz)
-#
-# Pinout CC1101 → ESP32:
-#   GND→GND  VCC→3.3V  GDO0→GPIO4  CSN→GPIO5
-#   SCK→GPIO18  MOSI→GPIO23  MISO→GPIO19  GDO2→N/C
-#
-# Uso:
-#   1. Pulsa un mando → mira los logs o sensores en HA
-#   2. Si aparece RC-Switch: usa transmit_rc_switch_raw (código corto)
-#   3. Si solo aparece HEX: usa el script tx_hex o transmit_raw
-#   4. Botón "Repetir última señal" reenvía lo capturado sin editar YAML
-#
-# Proyectos de referencia:
-#   https://github.com/phdindota/cc1101-transceiver
-#   https://github.com/sha1cybr/esp32-cc1101-rf-caprep
+# Transceptor RF genérico — CC1101 + DOIT ESP32 DevKit V1
+# Pinout: GND→GND  VCC→3.3V  GDO0→GPIO4  CSN→GPIO5
+#         SCK→GPIO18  MOSI→GPIO23  MISO→GPIO19  GDO2→N/C
 
 esphome:
   name: transceptor-rf
@@ -120,24 +108,15 @@ remote_receiver:
           id(g_rf_bits) = bit_count;
           id(txt_rf_hex).publish_state(hex + " (" + std::to_string(bit_count) + "b)");
           ESP_LOGI("rf", "HEX=%s BITS=%d PULSOS=%d", hex.c_str(), bit_count, (int) x.size());
-          ESP_LOGI("rf", "Para boton HEX: script tx_hex con hex=%s bits=%d", hex.c_str(), bit_count);
   on_rc_switch:
     then:
       - lambda: |-
-          std::string bits;
-          for (int i = 63; i >= 0; i--) {
-            bits += ((x.code >> i) & 1) ? '1' : '0';
-          }
-          const size_t start = bits.find('1');
-          if (start != std::string::npos) {
-            bits = bits.substr(start);
-          }
-          id(g_rc_code) = bits;
           id(g_rc_protocol) = x.protocol;
+          id(g_rc_code) = std::to_string(x.code);
           id(txt_rc_switch).publish_state(
-            "proto=" + std::to_string(x.protocol) + " data=" + bits);
-          ESP_LOGI("rf", "RC-SWITCH proto=%d data=%s code=0x%llX",
-                   x.protocol, bits.c_str(), (unsigned long long) x.code);
+            "proto=" + std::to_string(x.protocol) + " code=0x" + id(g_rc_code));
+          ESP_LOGI("rf", "RC-SWITCH proto=%d code=0x%llX (usa la linea remote.rc_switch del log)",
+                   x.protocol, (unsigned long long) x.code);
 
 remote_transmitter:
   id: rf_tx
@@ -233,36 +212,13 @@ script:
           bit_count: !lambda 'return id(g_rf_bits);'
           repeat_count: 8
 
-  - id: tx_last_rc_switch
-    then:
-      - if:
-          condition:
-            lambda: 'return !id(g_rc_code).empty();'
-          then:
-            - lambda: |-
-                uint8_t proto = id(g_rc_protocol);
-                if (proto > 8) proto = 1;
-                const std::string bits = id(g_rc_code);
-                const uint64_t code = esphome::remote_base::decode_binary_string(bits);
-                const uint8_t nbits = bits.size();
-                auto call = id(rf_tx).transmit();
-                esphome::remote_base::RC_SWITCH_PROTOCOLS[proto].transmit(call.get_data(), code, nbits);
-                call.set_send_times(10);
-                call.set_send_wait(10000);
-                call.perform();
-
 button:
+  # ── Utilidades de aprendizaje / repetición ──
   - platform: template
     name: "RF Repetir última (HEX)"
     icon: mdi:replay
     on_press:
       - script.execute: tx_last_hex
-
-  - platform: template
-    name: "RF Repetir última (RC-Switch)"
-    icon: mdi:replay-circle
-    on_press:
-      - script.execute: tx_last_rc_switch
 
   - platform: template
     name: "RF Limpiar memoria"
@@ -276,27 +232,52 @@ button:
           id(txt_rf_hex).publish_state("-");
           id(txt_rc_switch).publish_state("-");
 
-# ── Ejemplo: botón fijo con código RC-Switch (enchufes, persianas, etc.) ──
-# Descomenta y adapta tras ver el log "RC-SWITCH proto=... data=..."
-#
-#  - platform: template
-#    name: "Enchufe ON ejemplo"
-#    on_press:
-#      - remote_transmitter.transmit_rc_switch_raw:
-#          code: "01001011111000000101010110101"
-#          protocol: 1
-#          repeat:
-#            times: 10
-#            wait_time: 10ms
+  # ── Ventilador: códigos capturados 13:50 (RC-Switch proto 6) ──
+  - platform: template
+    name: "Luz intensidad 3"
+    icon: mdi:lightbulb-on-80
+    on_press:
+      - remote_transmitter.transmit_rc_switch_raw:
+          code: "01011001011010101011101001111010"
+          protocol: 6
+          repeat:
+            times: 8
+            wait_time: 50ms
 
-# ── Ejemplo: botón fijo con código HEX (mandos propietarios) ──
-# Descomenta tras ver el log "HEX=... BITS=..."
-#
-#  - platform: template
-#    name: "Dispositivo ejemplo"
-#    on_press:
-#      - script.execute:
-#          id: tx_hex
-#          hex_code: "334B34CCCD4CB54C80"
-#          bit_count: 65
-#          repeat_count: 8
+  - platform: template
+    name: "Luz apagada"
+    icon: mdi:lightbulb-off
+    on_press:
+      - remote_transmitter.transmit_rc_switch_raw:
+          code: "01100101100101101011101001111010"
+          protocol: 6
+          repeat:
+            times: 8
+            wait_time: 50ms
+
+  # ── Ventilador: mismo comando vía HEX (alternativa si RC-Switch no responde) ──
+  - platform: template
+    name: "Luz intensidad 3 (HEX)"
+    icon: mdi:lightbulb-on-80
+    on_press:
+      - script.execute:
+          id: tx_hex
+          hex_code: "334B34CCCD4CB54CC0"
+          bit_count: 66
+          repeat_count: 8
+
+  - platform: template
+    name: "Luz apagada (HEX)"
+    icon: mdi:lightbulb-off
+    on_press:
+      - script.execute:
+          id: tx_hex
+          hex_code: "34B34B34CD4CB54CC0"
+          bit_count: 66
+          repeat_count: 8
+
+# ── Plantilla para añadir más aparatos RF ──
+# 1. Pulsa el mando y copia del log:
+#    - RC-Switch: Received RCSwitch Raw: protocol=X data='...'
+#    - HEX:       HEX=... BITS=...
+# 2. Duplica un botón de arriba y pega los valores nuevos.
