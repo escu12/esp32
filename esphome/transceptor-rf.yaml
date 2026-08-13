@@ -1,11 +1,12 @@
-# Transceptor RF — CC1101 + ESP32 (DOIT DevKit V1) — modo dual-pin
+# Transceptor RF — CC1101 + ESP32 — dual-pin (GPIO4=TX, GPIO2=RX)
 #
-# Cableado:
-#   GND→GND  3.3V→VCC  GPIO5→CSN (pin 4)
-#   GPIO18→SCK  GPIO23→MOSI  GPIO19→MISO
-#   GPIO4→GDO0 (pin 3) TX    GPIO2→GDO2 (pin 8) RX
-#
-# TX: transmit_raw Flipper BinRAW — apagada TE=342µs, encendida TE=346µs
+# Añadir dispositivo: copia key + TE desde Flipper BinRAW en substitutions.
+
+substitutions:
+  fan_off_key: "0000017117717117717117-1711171771111717"
+  fan_off_te: "342"
+  fan_on_key: "0000017171177171171717-1711171771111717"
+  fan_on_te: "346"
 
 esphome:
   name: transceptor-rf
@@ -57,7 +58,6 @@ cc1101:
 remote_receiver:
   pin: GPIO2
   dump:
-    - raw
     - rc_switch
   tolerance: 25%
   idle: 4ms
@@ -88,45 +88,73 @@ remote_transmitter:
       - cc1101.begin_rx:
           id: rf_radio
 
+# Decodifica key Flipper BinRAW (hex 0/1/7 → 152 bit → pulsos TE µs)
 script:
-  - id: tx_luz_encendida
+  - id: flipper_raw_tx
+    parameters:
+      binraw_key: string
+      te_us: int
     then:
-      - remote_transmitter.transmit_raw:
-          transmitter_id: rf_tx
-          code: !include code_fan_light_on.yaml
-          repeat:
-            times: 8
-            wait_time: 50ms
-
-  - id: tx_luz_apagada
-    then:
-      - remote_transmitter.transmit_raw:
-          transmitter_id: rf_tx
-          code: !include code_fan_light_off.yaml
-          repeat:
-            times: 8
-            wait_time: 50ms
+      - lambda: !lambda |-
+          std::string k;
+          k.reserve(binraw_key.size());
+          for (char c : binraw_key) {
+            if (c != '-') k += c;
+          }
+          std::string bits;
+          bits.reserve(k.size() * 4);
+          for (char ch : k) {
+            int v = (ch >= '0' && ch <= '9') ? (ch - '0') : (ch - 'A' + 10);
+            for (int i = 3; i >= 0; i--) bits += ((v >> i) & 1) ? '1' : '0';
+          }
+          std::vector<int32_t> pulses;
+          if (!bits.empty()) {
+            char cur = bits[0];
+            int count = 1;
+            for (size_t i = 1; i < bits.size(); i++) {
+              if (bits[i] == cur) {
+                count++;
+              } else {
+                int dur = count * te_us;
+                pulses.push_back(cur == '1' ? dur : -dur);
+                cur = bits[i];
+                count = 1;
+              }
+            }
+            int dur = count * te_us;
+            pulses.push_back(cur == '1' ? dur : -dur);
+          }
+          auto call = id(rf_tx).transmit();
+          esphome::remote_base::RawProtocol().encode(call.get_data(), pulses);
+          call.set_send_times(8);
+          call.set_send_wait(50000);
+          call.perform();
 
 button:
   - platform: template
     name: "Luz encendida"
     icon: mdi:lightbulb-on
     on_press:
-      - script.execute: tx_luz_encendida
+      - script.execute:
+          id: flipper_raw_tx
+          binraw_key: "${fan_on_key}"
+          te_us: !lambda "return ${fan_on_te};"
 
   - platform: template
     name: "Luz apagada"
     icon: mdi:lightbulb-off
     on_press:
-      - script.execute: tx_luz_apagada
+      - script.execute:
+          id: flipper_raw_tx
+          binraw_key: "${fan_off_key}"
+          te_us: !lambda "return ${fan_off_te};"
 
-  # Prueba hardware: si al pulsar esto el mando físico deja de funcionar ~3s, el CC1101 SÍ emite RF
-  - platform: template
-    name: "Test TX continuo 3s"
-    icon: mdi:antenna
-    on_press:
-      - cc1101.begin_tx:
-          id: rf_radio
-      - delay: 3s
-      - cc1101.begin_rx:
-          id: rf_radio
+# Duplicar botón y cambiar fan_*_key / fan_*_te para más mandos:
+#
+#  - platform: template
+#    name: "Ventilador velocidad 1"
+#    on_press:
+#      - script.execute:
+#          id: flipper_raw_tx
+#          binraw_key: "PEGAR_KEY_FLIPPER"
+#          te_us: 342
