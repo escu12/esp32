@@ -5,8 +5,7 @@
 #   GPIO18→SCK  GPIO23→MOSI  GPIO19→MISO
 #   GPIO4→GDO0 (pin 3) TX    GPIO2→GDO2 (pin 8) RX
 #
-# TX: usa transmit_raw (réplica exacta protocolo 6 invertido).
-# Si no funciona, pulsa el mando y copia el array "Received Raw:" del log.
+# TX: transmit_raw desde captura Flipper BinRAW (152bit, TE=356µs)
 
 esphome:
   name: transceptor-rf
@@ -49,7 +48,7 @@ spi:
 cc1101:
   id: rf_radio
   cs_pin: GPIO5
-  frequency: 433.92MHz
+  frequency: 433.88MHz
   modulation_type: ASK/OOK
   symbol_rate: 5000
   filter_bandwidth: 203kHz
@@ -91,7 +90,7 @@ remote_transmitter:
           id: rf_radio
 
 script:
-  - id: tx_luz_intensidad_3
+  - id: tx_luz_encendida
     then:
       - remote_transmitter.transmit_raw:
           transmitter_id: rf_tx
@@ -111,10 +110,10 @@ script:
 
 button:
   - platform: template
-    name: "Luz intensidad 3"
-    icon: mdi:lightbulb-on-80
+    name: "Luz encendida"
+    icon: mdi:lightbulb-on
     on_press:
-      - script.execute: tx_luz_intensidad_3
+      - script.execute: tx_luz_encendida
 
   - platform: template
     name: "Luz apagada"
