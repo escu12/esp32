@@ -69,10 +69,9 @@ remote_receiver:
 
 remote_transmitter:
   id: rf_tx
-  pin:
-    number: GPIO4
-    allow_other_uses: true
+  pin: GPIO4
   carrier_duty_percent: 100%
+  non_blocking: true
   rmt_symbols: 256
   on_transmit:
     then:
