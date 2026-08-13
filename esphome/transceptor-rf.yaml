@@ -2,18 +2,11 @@
 #
 # Cableado:
 #   GND→GND  3.3V→VCC  GPIO5→CSN (pin 4)
-#   GPIO18→SCK (pin 5)  GPIO23→MOSI (pin 6)  GPIO19→MISO (pin 7)
-#   GPIO4→GDO0 (pin 3)  TX    GPIO2→GDO2 (pin 8)  RX
+#   GPIO18→SCK  GPIO23→MOSI  GPIO19→MISO
+#   GPIO4→GDO0 (pin 3) TX    GPIO2→GDO2 (pin 8) RX
 #
-# Cómo usar:
-#   1. Instala y abre Logs
-#   2. Pulsa un mando → copia la línea "Received RCSwitch Raw: ..."
-#   3. Duplica un botón de abajo y pega code + protocol
-#
-# Referencias:
-#   https://github.com/phdindota/cc1101-transceiver
-#   https://github.com/Daedilus/cc1101-esp32-esphome-fan-controller
-#   https://esphome.io/components/cc1101/
+# TX: usa transmit_raw (réplica exacta protocolo 6 invertido).
+# Si no funciona, pulsa el mando y copia el array "Received Raw:" del log.
 
 esphome:
   name: transceptor-rf
@@ -58,68 +51,84 @@ cc1101:
   cs_pin: GPIO5
   frequency: 433.92MHz
   modulation_type: ASK/OOK
+  symbol_rate: 5000
+  filter_bandwidth: 203kHz
   output_power: 10
 
-# Dual-pin (recomendado): GDO0=TX (GPIO4), GDO2=RX (GPIO2)
-# RMT del ESP32: 512 símbolos compartidos RX+TX → 256+256
 remote_receiver:
   pin: GPIO2
   dump:
+    - raw
     - rc_switch
-    # Añade "raw" solo al aprender códigos nuevos (genera mucha carga en logs/API)
-  tolerance: 50%
-  idle: 2ms
-  filter: 100us
+  tolerance: 25%
+  idle: 4ms
+  filter: 250us
   buffer_size: 8kb
   rmt_symbols: 256
   receive_symbols: 256
   filter_symbols: 48
 
 remote_transmitter:
-  pin: GPIO4
+  id: rf_tx
+  pin:
+    number: GPIO4
+    allow_other_uses: true
   carrier_duty_percent: 100%
   rmt_symbols: 256
   on_transmit:
     then:
+      - cc1101.set_idle:
+          id: rf_radio
+      - delay: 2ms
       - cc1101.begin_tx:
           id: rf_radio
   on_complete:
     then:
+      - cc1101.set_idle:
+          id: rf_radio
+      - delay: 2ms
       - cc1101.begin_rx:
           id: rf_radio
 
+script:
+  - id: tx_luz_intensidad_3
+    then:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: !include code_fan_light_on.yaml
+          repeat:
+            times: 8
+            wait_time: 50ms
+
+  - id: tx_luz_apagada
+    then:
+      - remote_transmitter.transmit_raw:
+          transmitter_id: rf_tx
+          code: !include code_fan_light_off.yaml
+          repeat:
+            times: 8
+            wait_time: 50ms
+
 button:
-  # Códigos capturados de tu mando (RC-Switch protocolo 6)
   - platform: template
     name: "Luz intensidad 3"
     icon: mdi:lightbulb-on-80
     on_press:
-      - remote_transmitter.transmit_rc_switch_raw:
-          code: "01011001011010101011101001111010"
-          protocol: 6
-          repeat:
-            times: 8
-            wait_time: 50ms
+      - script.execute: tx_luz_intensidad_3
 
   - platform: template
     name: "Luz apagada"
     icon: mdi:lightbulb-off
     on_press:
-      - remote_transmitter.transmit_rc_switch_raw:
-          code: "01100101100101101011101001111010"
-          protocol: 6
-          repeat:
-            times: 8
-            wait_time: 50ms
+      - script.execute: tx_luz_apagada
 
-# ── Añadir más dispositivos: duplica un botón y cambia name + code ──
-#
-#  - platform: template
-#    name: "Enchufe ON"
-#    on_press:
-#      - remote_transmitter.transmit_rc_switch_raw:
-#          code: "PEGAR_DATA_DEL_LOG"
-#          protocol: 1
-#          repeat:
-#            times: 10
-#            wait_time: 10ms
+  # Prueba hardware: si al pulsar esto el mando físico deja de funcionar ~3s, el CC1101 SÍ emite RF
+  - platform: template
+    name: "Test TX continuo 3s"
+    icon: mdi:antenna
+    on_press:
+      - cc1101.begin_tx:
+          id: rf_radio
+      - delay: 3s
+      - cc1101.begin_rx:
+          id: rf_radio
