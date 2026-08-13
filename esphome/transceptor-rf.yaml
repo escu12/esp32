@@ -24,9 +24,12 @@ esp32:
   flash_size: 4MB
   framework:
     type: esp-idf
+    advanced:
+      minimum_chip_revision: "3.1"
+      sram1_as_iram: true
 
 logger:
-  level: DEBUG
+  level: INFO
 
 api:
   encryption:
@@ -57,6 +60,7 @@ cc1101:
   output_power: 10
 
 # GDO2 sin conectar → TX y RX comparten GPIO4 (open-drain)
+# RMT del ESP32: 512 símbolos compartidos RX+TX → 256+256
 remote_receiver:
   pin:
     number: GPIO4
@@ -67,12 +71,15 @@ remote_receiver:
       open_drain: true
     allow_other_uses: true
   dump:
-    - raw
     - rc_switch
+    # Añade "raw" solo al aprender códigos nuevos (genera mucha carga en logs/API)
   tolerance: 50%
-  idle: 4ms
-  filter: 250us
-  buffer_size: 4kb
+  idle: 2ms
+  filter: 100us
+  buffer_size: 8kb
+  rmt_symbols: 256
+  receive_symbols: 256
+  filter_symbols: 48
 
 remote_transmitter:
   pin:
@@ -84,6 +91,7 @@ remote_transmitter:
       open_drain: true
     allow_other_uses: true
   carrier_duty_percent: 100%
+  eot_level: false
   rmt_symbols: 256
   on_transmit:
     then:
