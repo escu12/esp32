@@ -99,14 +99,18 @@ remote_transmitter:
   non_blocking: true
   on_transmit:
     then:
-      - cc1101.set_idle: rf_radio
+      - cc1101.set_idle:
+          id: rf_radio
       - remote_transmitter.digital_write: false
-      - cc1101.begin_tx: rf_radio
+      - cc1101.begin_tx:
+          id: rf_radio
   on_complete:
     then:
-      - cc1101.set_idle: rf_radio
+      - cc1101.set_idle:
+          id: rf_radio
       - remote_transmitter.digital_write: true
-      - cc1101.begin_rx: rf_radio
+      - cc1101.begin_rx:
+          id: rf_radio
 
 # Repite la transmisión 3 veces (muchos ventiladores necesitan varios envíos).
 script:

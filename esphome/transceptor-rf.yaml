@@ -1,0 +1,194 @@
+# Board: DOIT ESP32 DEVKIT V1 (DOIT)
+# Definition: definitions/boards/esp32doit-devkit-v1/manifest.yaml
+#
+# CC1101 → ESP32 pinout:
+#   Pin 1 GND  → GND
+#   Pin 2 VCC  → 3.3V
+#   Pin 3 GDO0 → GPIO4
+#   Pin 4 CSN  → GPIO5
+#   Pin 5 SCK  → GPIO18
+#   Pin 6 MOSI → GPIO23
+#   Pin 7 MISO → GPIO19
+#   Pin 8 GDO2 → N/C
+#
+# FASE 1 (ahora): flashea, abre Logs y pulsa el mando del ventilador.
+#   Verás líneas como: Received Raw: code=[4088, -1542, ...]
+#   Copia cada array y pégalo en los botones de la FASE 2.
+#
+# FASE 2: descomenta la sección "botones" al final y pega tus códigos.
+
+esphome:
+  name: transceptor-rf
+  friendly_name: Transceptor RF
+  min_version: 2026.7.4
+
+esp32:
+  variant: esp32
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: "sahxzY0ZjIcBv3mBvxkW6bO6DuJCmWSAijzVAODTkcA="
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: Transceptor RF Fallback Hotspot
+    password: "0SngoGnyZvxS"
+
+captive_portal:
+
+spi:
+  clk_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
+
+cc1101:
+  id: rf_radio
+  cs_pin: GPIO5
+  frequency: 433.92MHz
+  modulation_type: ASK/OOK
+  symbol_rate: 5000
+  filter_bandwidth: 250kHz
+  output_power: 10
+
+# GDO2 sin conectar → modo un solo pin en GPIO4 (open-drain en ESP32)
+remote_receiver:
+  id: rf_rx
+  pin:
+    number: GPIO4
+    mode:
+      input: true
+      output: true
+      pullup: true
+      open_drain: true
+    allow_other_uses: true
+  dump: raw
+  tolerance: 50%
+  idle: 4ms
+  filter: 250us
+  buffer_size: 2kb
+
+remote_transmitter:
+  id: rf_tx
+  pin:
+    number: GPIO4
+    mode:
+      input: true
+      output: true
+      pullup: true
+      open_drain: true
+    allow_other_uses: true
+  carrier_duty_percent: 100%
+  non_blocking: true
+  on_transmit:
+    then:
+      - cc1101.set_idle:
+          id: rf_radio
+      - remote_transmitter.digital_write: false
+      - cc1101.begin_tx:
+          id: rf_radio
+  on_complete:
+    then:
+      - cc1101.set_idle:
+          id: rf_radio
+      - remote_transmitter.digital_write: true
+      - cc1101.begin_rx:
+          id: rf_radio
+
+# ── FASE 2: descomenta todo el bloque siguiente tras capturar los códigos ──
+#
+# button:
+#   - platform: template
+#     name: "Ventilador Encender"
+#     icon: mdi:fan
+#     on_press:
+#       - remote_transmitter.transmit_raw:
+#           code:
+#             - 4088
+#             - -1542
+#             # ... pega aquí el código capturado ...
+#           repeat:
+#             times: 3
+#             wait_time: 15ms
+#
+#   - platform: template
+#     name: "Ventilador Apagar"
+#     icon: mdi:fan-off
+#     on_press:
+#       - remote_transmitter.transmit_raw:
+#           code:
+#             - 4088
+#             - -1542
+#           repeat:
+#             times: 3
+#             wait_time: 15ms
+#
+#   - platform: template
+#     name: "Ventilador Velocidad 1"
+#     icon: mdi:fan-speed-1
+#     on_press:
+#       - remote_transmitter.transmit_raw:
+#           code:
+#             - 4088
+#             - -1542
+#           repeat:
+#             times: 3
+#             wait_time: 15ms
+#
+#   - platform: template
+#     name: "Ventilador Velocidad 2"
+#     icon: mdi:fan-speed-2
+#     on_press:
+#       - remote_transmitter.transmit_raw:
+#           code:
+#             - 4088
+#             - -1542
+#           repeat:
+#             times: 3
+#             wait_time: 15ms
+#
+#   - platform: template
+#     name: "Ventilador Velocidad 3"
+#     icon: mdi:fan-speed-3
+#     on_press:
+#       - remote_transmitter.transmit_raw:
+#           code:
+#             - 4088
+#             - -1542
+#           repeat:
+#             times: 3
+#             wait_time: 15ms
+#
+#   - platform: template
+#     name: "Ventilador Luz ON"
+#     icon: mdi:lightbulb-on
+#     on_press:
+#       - remote_transmitter.transmit_raw:
+#           code:
+#             - 4088
+#             - -1542
+#           repeat:
+#             times: 3
+#             wait_time: 15ms
+#
+#   - platform: template
+#     name: "Ventilador Luz OFF"
+#     icon: mdi:lightbulb-off
+#     on_press:
+#       - remote_transmitter.transmit_raw:
+#           code:
+#             - 4088
+#             - -1542
+#           repeat:
+#             times: 3
+#             wait_time: 15ms
