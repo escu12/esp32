@@ -1,21 +1,18 @@
-# Board: DOIT ESP32 DEVKIT V1 (DOIT)
-# Definition: definitions/boards/esp32doit-devkit-v1/manifest.yaml
+# Transceptor RF genérico — CC1101 + ESP32 (cualquier mando 433 MHz)
 #
-# CC1101 → ESP32 pinout:
-#   Pin 1 GND  → GND
-#   Pin 2 VCC  → 3.3V
-#   Pin 3 GDO0 → GPIO4
-#   Pin 4 CSN  → GPIO5
-#   Pin 5 SCK  → GPIO18
-#   Pin 6 MOSI → GPIO23
-#   Pin 7 MISO → GPIO19
-#   Pin 8 GDO2 → N/C
+# Pinout CC1101 → ESP32:
+#   GND→GND  VCC→3.3V  GDO0→GPIO4  CSN→GPIO5
+#   SCK→GPIO18  MOSI→GPIO23  MISO→GPIO19  GDO2→N/C
 #
-# FASE 1 (ahora): flashea, abre Logs y pulsa el mando del ventilador.
-#   Verás líneas como: Received Raw: code=[4088, -1542, ...]
-#   Copia cada array y pégalo en los botones de la FASE 2.
+# Uso:
+#   1. Pulsa un mando → mira los logs o sensores en HA
+#   2. Si aparece RC-Switch: usa transmit_rc_switch_raw (código corto)
+#   3. Si solo aparece HEX: usa el script tx_hex o transmit_raw
+#   4. Botón "Repetir última señal" reenvía lo capturado sin editar YAML
 #
-# FASE 2: descomenta la sección "botones" al final y pega tus códigos.
+# Proyectos de referencia:
+#   https://github.com/phdindota/cc1101-transceiver
+#   https://github.com/sha1cybr/esp32-cc1101-rf-caprep
 
 esphome:
   name: transceptor-rf
@@ -61,7 +58,24 @@ cc1101:
   filter_bandwidth: 250kHz
   output_power: 10
 
-# GDO2 sin conectar → modo un solo pin en GPIO4 (open-drain en ESP32)
+globals:
+  - id: g_rf_hex
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: g_rf_bits
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_rc_code
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: g_rc_protocol
+    type: int
+    restore_value: no
+    initial_value: '0'
+
 remote_receiver:
   id: rf_rx
   pin:
@@ -72,11 +86,58 @@ remote_receiver:
       pullup: true
       open_drain: true
     allow_other_uses: true
-  dump: raw
+  dump:
+    - raw
+    - rc_switch
   tolerance: 50%
   idle: 4ms
   filter: 250us
-  buffer_size: 2kb
+  buffer_size: 4kb
+  on_raw:
+    then:
+      - lambda: |-
+          const int THRESH = 700;
+          std::string bits;
+          bits.reserve(x.size());
+          for (int v : x) {
+            bits += (abs(v) > THRESH) ? '1' : '0';
+          }
+          const int bit_count = bits.size();
+          std::string hex;
+          std::string padded = bits;
+          const int pad = (8 - padded.size() % 8) % 8;
+          padded.append(pad, '0');
+          for (size_t i = 0; i < padded.size(); i += 8) {
+            uint8_t byte = 0;
+            for (int j = 0; j < 8; j++) {
+              byte = (byte << 1) | (padded[i + j] == '1' ? 1 : 0);
+            }
+            char buf[3];
+            snprintf(buf, sizeof(buf), "%02X", byte);
+            hex += buf;
+          }
+          id(g_rf_hex) = hex;
+          id(g_rf_bits) = bit_count;
+          id(txt_rf_hex).publish_state(hex + " (" + std::to_string(bit_count) + "b)");
+          ESP_LOGI("rf", "HEX=%s BITS=%d PULSOS=%d", hex.c_str(), bit_count, (int) x.size());
+          ESP_LOGI("rf", "Para boton HEX: script tx_hex con hex=%s bits=%d", hex.c_str(), bit_count);
+  on_rc_switch:
+    then:
+      - lambda: |-
+          char buf[64];
+          snprintf(buf, sizeof(buf), "%llu", (unsigned long long) x.code);
+          std::string bits;
+          for (int i = x.nbits - 1; i >= 0; i--) {
+            bits += ((x.code >> i) & 1) ? '1' : '0';
+          }
+          id(g_rc_code) = bits;
+          id(g_rc_protocol) = x.protocol;
+          id(txt_rc_switch).publish_state(
+            "proto=" + std::to_string(x.protocol) + " data=" + bits);
+          ESP_LOGI("rf", "RC-SWITCH proto=%d nbits=%d data=%s code=0x%llX",
+                   x.protocol, x.nbits, bits.c_str(), (unsigned long long) x.code);
+          ESP_LOGI("rf", "Para boton RC: transmit_rc_switch_raw code='%s' protocol=%d",
+                   bits.c_str(), x.protocol);
 
 remote_transmitter:
   id: rf_tx
@@ -106,154 +167,127 @@ remote_transmitter:
       - cc1101.begin_rx:
           id: rf_radio
 
-# Botones capturados del mando (13:31:10 = luz intensidad 3, 13:31:12 = luz apagada)
-button:
+text_sensor:
   - platform: template
-    name: "Luz Intensidad 3"
-    icon: mdi:lightbulb-on-80
-    on_press:
-      - remote_transmitter.transmit_raw:
-          code:
-            - 341
-            - -350
-            - 1039
-            - -1020
-            - 359
-            - -341
-            - 1025
-            - -1040
-            - 346
-            - -1036
-            - 344
-            - -335
-            - 1035
-            - -338
-            - 1060
-            - -1014
-            - 350
-            - -338
-            - 1060
-            - -1015
-            - 347
-            - -1037
-            - 346
-            - -335
-            - 1058
-            - -1017
-            - 341
-            - -345
-            - 1041
-            - -1023
-            - 356
-            - -336
-            - 1042
-            - -1036
-            - 340
-            - -342
-            - 1046
-            - -1043
-            - 327
-            - -1042
-            - 346
-            - -1042
-            - 340
-            - -336
-            - 1048
-            - -1021
-            - 337
-            - -368
-            - 1031
-            - -338
-            - 1040
-            - -1032
-            - 338
-            - -1043
-            - 328
-            - -1039
-            - 349
-            - -1040
-            - 343
-            - -336
-            - 1033
-            - -1038
-            - 348
-            - -340
-            - 1035
-          repeat:
-            times: 8
-            wait_time: 50ms
+    name: "RF último HEX"
+    id: txt_rf_hex
+    icon: mdi:hexadecimal
+    lambda: |-
+      if (id(g_rf_hex).empty()) return std::string("-");
+      return id(g_rf_hex) + " (" + std::to_string(id(g_rf_bits)) + "b)";
+    update_interval: 2s
 
   - platform: template
-    name: "Luz Apagada"
-    icon: mdi:lightbulb-off
+    name: "RF último RC-Switch"
+    id: txt_rc_switch
+    icon: mdi:radio-tower
+    lambda: |-
+      if (id(g_rc_code).empty()) return std::string("-");
+      return "proto=" + std::to_string(id(g_rc_protocol)) + " " + id(g_rc_code);
+    update_interval: 2s
+
+script:
+  - id: tx_hex
+    parameters:
+      hex_code: string
+      bit_count: int
+      repeat_count: int
+    then:
+      - lambda: |-
+          const int SHORT = 345;
+          const int LONG = 1045;
+          std::string bits;
+          for (size_t i = 0; i + 1 < hex_code.length(); i += 2) {
+            uint8_t byte = 0;
+            for (int n = 0; n < 2; n++) {
+              char c = hex_code[i + n];
+              int nibble = -1;
+              if (c >= '0' && c <= '9') nibble = c - '0';
+              else if (c >= 'A' && c <= 'F') nibble = c - 'A' + 10;
+              else if (c >= 'a' && c <= 'f') nibble = c - 'a' + 10;
+              if (nibble >= 0) byte = (byte << 4) | nibble;
+            }
+            for (int b = 7; b >= 0; b--) bits += ((byte >> b) & 1) ? '1' : '0';
+          }
+          if (bit_count > 0 && (size_t) bit_count < bits.size()) {
+            bits.resize(bit_count);
+          }
+          std::vector<int32_t> code;
+          code.reserve(bits.size());
+          for (size_t i = 0; i < bits.size(); i++) {
+            int mag = (bits[i] == '1') ? LONG : SHORT;
+            code.push_back((i % 2 == 0) ? mag : -mag);
+          }
+          const int reps = repeat_count > 0 ? repeat_count : 3;
+          id(rf_tx).transmit(code, reps, 50000);
+
+  - id: tx_last_hex
+    then:
+      - script.execute:
+          id: tx_hex
+          hex_code: !lambda 'return id(g_rf_hex);'
+          bit_count: !lambda 'return id(g_rf_bits);'
+          repeat_count: 8
+
+  - id: tx_last_rc_switch
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(g_rc_code).empty();'
+          then:
+            - remote_transmitter.transmit_rc_switch_raw:
+                code: !lambda 'return id(g_rc_code);'
+                protocol: !lambda 'return id(g_rc_protocol);'
+                repeat:
+                  times: 10
+                  wait_time: 10ms
+
+button:
+  - platform: template
+    name: "RF Repetir última (HEX)"
+    icon: mdi:replay
     on_press:
-      - remote_transmitter.transmit_raw:
-          code:
-            - 339
-            - -338
-            - 1037
-            - -1047
-            - 326
-            - -1042
-            - 344
-            - -351
-            - 1044
-            - -343
-            - 1019
-            - -1043
-            - 354
-            - -338
-            - 1029
-            - -1040
-            - 345
-            - -1018
-            - 343
-            - -344
-            - 1039
-            - -369
-            - 1016
-            - -1045
-            - 343
-            - -347
-            - 1018
-            - -1041
-            - 356
-            - -1015
-            - 350
-            - -339
-            - 1060
-            - -1015
-            - 348
-            - -340
-            - 1035
-            - -1040
-            - 347
-            - -1041
-            - 341
-            - -1037
-            - 342
-            - -335
-            - 1038
-            - -1022
-            - 365
-            - -342
-            - 1045
-            - -342
-            - 1020
-            - -1036
-            - 340
-            - -1045
-            - 355
-            - -1016
-            - 347
-            - -1044
-            - 344
-            - -340
-            - 1038
-            - -1018
-            - 341
-            - -359
-            - 1037
-          repeat:
-            times: 8
-            wait_time: 50ms
+      - script.execute: tx_last_hex
+
+  - platform: template
+    name: "RF Repetir última (RC-Switch)"
+    icon: mdi:replay-circle
+    on_press:
+      - script.execute: tx_last_rc_switch
+
+  - platform: template
+    name: "RF Limpiar memoria"
+    icon: mdi:delete
+    on_press:
+      - lambda: |-
+          id(g_rf_hex) = "";
+          id(g_rf_bits) = 0;
+          id(g_rc_code) = "";
+          id(g_rc_protocol) = 0;
+          id(txt_rf_hex).publish_state("-");
+          id(txt_rc_switch).publish_state("-");
+
+# ── Ejemplo: botón fijo con código RC-Switch (enchufes, persianas, etc.) ──
+# Descomenta y adapta tras ver el log "RC-SWITCH proto=... data=..."
+#
+#  - platform: template
+#    name: "Enchufe ON ejemplo"
+#    on_press:
+#      - remote_transmitter.transmit_rc_switch_raw:
+#          code: "01001011111000000101010110101"
+#          protocol: 1
+#          repeat:
+#            times: 10
+#            wait_time: 10ms
+
+# ── Ejemplo: botón fijo con código HEX (mandos propietarios) ──
+# Descomenta tras ver el log "HEX=... BITS=..."
+#
+#  - platform: template
+#    name: "Dispositivo ejemplo"
+#    on_press:
+#      - script.execute:
+#          id: tx_hex
+#          hex_code: "334B34CCCD4CB54C80"
+#          bit_count: 65
+#          repeat_count: 8
