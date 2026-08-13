@@ -201,10 +201,6 @@ fan:
           id: flipper_raw_tx
           binraw_key: "${fan_off_key}"
           te_us: ${fan_off_te}
-    on_turn_on:
-      - fan.turn_on:
-          id: fan_dormitorio
-          speed: 1
     on_speed_set:
       - script.execute:
           id: flipper_raw_tx
