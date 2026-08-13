@@ -90,6 +90,7 @@ remote_transmitter:
     allow_other_uses: true
   carrier_duty_percent: 100%
   non_blocking: true
+  rmt_symbols: 256
   on_transmit:
     then:
       - cc1101.set_idle:
@@ -105,90 +106,154 @@ remote_transmitter:
       - cc1101.begin_rx:
           id: rf_radio
 
-# ── FASE 2: descomenta todo el bloque siguiente tras capturar los códigos ──
-#
-# button:
-#   - platform: template
-#     name: "Ventilador Encender"
-#     icon: mdi:fan
-#     on_press:
-#       - remote_transmitter.transmit_raw:
-#           code:
-#             - 4088
-#             - -1542
-#             # ... pega aquí el código capturado ...
-#           repeat:
-#             times: 3
-#             wait_time: 15ms
-#
-#   - platform: template
-#     name: "Ventilador Apagar"
-#     icon: mdi:fan-off
-#     on_press:
-#       - remote_transmitter.transmit_raw:
-#           code:
-#             - 4088
-#             - -1542
-#           repeat:
-#             times: 3
-#             wait_time: 15ms
-#
-#   - platform: template
-#     name: "Ventilador Velocidad 1"
-#     icon: mdi:fan-speed-1
-#     on_press:
-#       - remote_transmitter.transmit_raw:
-#           code:
-#             - 4088
-#             - -1542
-#           repeat:
-#             times: 3
-#             wait_time: 15ms
-#
-#   - platform: template
-#     name: "Ventilador Velocidad 2"
-#     icon: mdi:fan-speed-2
-#     on_press:
-#       - remote_transmitter.transmit_raw:
-#           code:
-#             - 4088
-#             - -1542
-#           repeat:
-#             times: 3
-#             wait_time: 15ms
-#
-#   - platform: template
-#     name: "Ventilador Velocidad 3"
-#     icon: mdi:fan-speed-3
-#     on_press:
-#       - remote_transmitter.transmit_raw:
-#           code:
-#             - 4088
-#             - -1542
-#           repeat:
-#             times: 3
-#             wait_time: 15ms
-#
-#   - platform: template
-#     name: "Ventilador Luz ON"
-#     icon: mdi:lightbulb-on
-#     on_press:
-#       - remote_transmitter.transmit_raw:
-#           code:
-#             - 4088
-#             - -1542
-#           repeat:
-#             times: 3
-#             wait_time: 15ms
-#
-#   - platform: template
-#     name: "Ventilador Luz OFF"
-#     icon: mdi:lightbulb-off
-#     on_press:
-#       - remote_transmitter.transmit_raw:
-#           code:
-#             - 4088
-#             - -1542
-#           repeat:
-#             times: 3
-#             wait_time: 15ms
+# Botones capturados del mando (13:31:10 = luz intensidad 3, 13:31:12 = luz apagada)
+button:
+  - platform: template
+    name: "Luz Intensidad 3"
+    icon: mdi:lightbulb-on-80
+    on_press:
+      - remote_transmitter.transmit_raw:
+          code:
+            - 341
+            - -350
+            - 1039
+            - -1020
+            - 359
+            - -341
+            - 1025
+            - -1040
+            - 346
+            - -1036
+            - 344
+            - -335
+            - 1035
+            - -338
+            - 1060
+            - -1014
+            - 350
+            - -338
+            - 1060
+            - -1015
+            - 347
+            - -1037
+            - 346
+            - -335
+            - 1058
+            - -1017
+            - 341
+            - -345
+            - 1041
+            - -1023
+            - 356
+            - -336
+            - 1042
+            - -1036
+            - 340
+            - -342
+            - 1046
+            - -1043
+            - 327
+            - -1042
+            - 346
+            - -1042
+            - 340
+            - -336
+            - 1048
+            - -1021
+            - 337
+            - -368
+            - 1031
+            - -338
+            - 1040
+            - -1032
+            - 338
+            - -1043
+            - 328
+            - -1039
+            - 349
+            - -1040
+            - 343
+            - -336
+            - 1033
+            - -1038
+            - 348
+            - -340
+            - 1035
+          repeat:
+            times: 8
+            wait_time: 50ms
+
+  - platform: template
+    name: "Luz Apagada"
+    icon: mdi:lightbulb-off
+    on_press:
+      - remote_transmitter.transmit_raw:
+          code:
+            - 339
+            - -338
+            - 1037
+            - -1047
+            - 326
+            - -1042
+            - 344
+            - -351
+            - 1044
+            - -343
+            - 1019
+            - -1043
+            - 354
+            - -338
+            - 1029
+            - -1040
+            - 345
+            - -1018
+            - 343
+            - -344
+            - 1039
+            - -369
+            - 1016
+            - -1045
+            - 343
+            - -347
+            - 1018
+            - -1041
+            - 356
+            - -1015
+            - 350
+            - -339
+            - 1060
+            - -1015
+            - 348
+            - -340
+            - 1035
+            - -1040
+            - 347
+            - -1041
+            - 341
+            - -1037
+            - 342
+            - -335
+            - 1038
+            - -1022
+            - 365
+            - -342
+            - 1045
+            - -342
+            - 1020
+            - -1036
+            - 340
+            - -1045
+            - 355
+            - -1016
+            - 347
+            - -1044
+            - 344
+            - -340
+            - 1038
+            - -1018
+            - 341
+            - -359
+            - 1037
+          repeat:
+            times: 8
+            wait_time: 50ms
