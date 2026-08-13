@@ -220,7 +220,7 @@ script:
           }
           const int reps = repeat_count > 0 ? repeat_count : 3;
           auto call = id(rf_tx).transmit();
-          call.set_raw(code);
+          call.get_data()->set_data(code);
           call.set_send_times(reps);
           call.set_send_wait(50000);
           call.perform();
