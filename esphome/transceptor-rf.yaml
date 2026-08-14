@@ -51,6 +51,12 @@ esphome:
   name: transceptor-rf
   friendly_name: Transceptor RF
   min_version: 2026.7.4
+  on_boot:
+    priority: -100
+    then:
+      - delay: 3s
+      - lambda: !lambda |-
+          id(rf_ready) = true;
 
 esp32:
   variant: esp32
@@ -138,6 +144,10 @@ globals:
   - id: fan_rf_ultimo
     type: int
     initial_value: "0"
+  # Evita TX RF durante el arranque (on_state / outputs se disparan al boot)
+  - id: rf_ready
+    type: bool
+    initial_value: "false"
 
 script:
   - id: flipper_raw_tx
@@ -196,6 +206,7 @@ output:
     type: float
     write_action:
       - lambda: !lambda |-
+          if (!id(rf_ready)) return;
           float br = state;
           int nivel = 0;
           if (br > 0.01f) {
@@ -229,6 +240,7 @@ output:
     type: float
     write_action:
       - lambda: !lambda |-
+          if (!id(rf_ready)) return;
           if (id(luz_nivel_prev) == 0) return;
           float ct = state;
           int color = 1;
@@ -257,6 +269,7 @@ fan:
     # 0% = apagado RF, 1-6 = velocidades, preset Viento
     on_state:
       - lambda: !lambda |-
+          if (!id(rf_ready)) return;
           int cmd;
           if (!id(fan_dormitorio).state) {
             cmd = 0;
@@ -266,12 +279,15 @@ fan:
           } else {
             cmd = id(fan_dormitorio).speed;
           }
-          // Apagado: siempre enviar RF (automatizaciones pueden repetir OFF)
-          if (cmd != 0 && cmd == id(fan_rf_ultimo)) return;
-          id(fan_rf_ultimo) = cmd;
           if (cmd == 0) {
+            if (id(fan_rf_ultimo) == 0) return;
+            id(fan_rf_ultimo) = 0;
             id(flipper_raw_tx).execute("${fan_off_key}", ${fan_off_te});
-          } else if (cmd == 99) {
+            return;
+          }
+          if (cmd == id(fan_rf_ultimo)) return;
+          id(fan_rf_ultimo) = cmd;
+          if (cmd == 99) {
             id(flipper_raw_tx).execute("${fan_wind_key}", ${fan_wind_te});
           } else {
             const char *key;
