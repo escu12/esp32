@@ -1,0 +1,315 @@
+# Transceptor RF — CC1101 + ESP32 — dual-pin (GPIO4=TX, GPIO2=RX)
+# Mando: dormitorio principal (Flipper BinRAW)
+
+substitutions:
+  # Ventilador
+  fan_off_key: "0000017171171717711717-1711171771111717"
+  fan_off_te: "339"
+  fan_s1_key: "0000017171711771177117-1711171771111717"
+  fan_s1_te: "347"
+  fan_s2_key: "0000017171177171177117-1711171771111717"
+  fan_s2_te: "344"
+  fan_s3_key: "0000017171171771177117-1711171771111717"
+  fan_s3_te: "337"
+  fan_s4_key: "0000017117717171177117-1711171771111717"
+  fan_s4_te: "337"
+  fan_s5_key: "0000017117711771177117-1711171771111717"
+  fan_s5_te: "342"
+  fan_s6_key: "0000017117177171177117-1711171771111717"
+  fan_s6_te: "346"
+  fan_wind_key: "0000017171177117717117-1711171771111717"
+  fan_wind_te: "341"
+  # Luz
+  light_off_key: "0000017117717117717117-1711171771111717"
+  light_off_te: "344"
+  light_l1_key: "0000017171717171171717-1711171771111717"
+  light_l1_te: "346"
+  light_l2_key: "0000017171711771171717-1711171771111717"
+  light_l2_te: "345"
+  light_l3_key: "0000017171177171171717-1711171771111717"
+  light_l3_te: "349"
+  light_l4_key: "0000017171171771171717-1711171771111717"
+  light_l4_te: "345"
+  light_l5_key: "0000017117717171171717-1711171771111717"
+  light_l5_te: "347"
+  light_l6_key: "0000017117711771171717-1711171771111717"
+  light_l6_te: "347"
+  light_l7_key: "0000017117177171171717-1711171771111717"
+  light_l7_te: "343"
+  light_l8_key: "0000017117171771171717-1711171771111717"
+  light_l8_te: "344"
+  light_l9_key: "0000011771171771171717-1711171771111717"
+  light_l9_te: "349"
+  light_warm_key: "0000017117711717717117-1711171771111717"
+  light_warm_te: "347"
+  light_neutral_key: "0000017117177117717117-1711171771111717"
+  light_neutral_te: "345"
+  light_cold_key: "0000017117171717717117-1711171771111717"
+  light_cold_te: "345"
+
+esphome:
+  name: transceptor-rf
+  friendly_name: Transceptor RF
+  min_version: 2026.7.4
+  on_boot:
+    priority: -100
+    then:
+      - delay: 3s
+      - lambda: !lambda |-
+          id(rf_ready) = true;
+
+esp32:
+  variant: esp32
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+    advanced:
+      minimum_chip_revision: "3.1"
+      sram1_as_iram: true
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: "sahxzY0ZjIcBv3mBvxkW6bO6DuJCmWSAijzVAODTkcA="
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: Transceptor RF Fallback Hotspot
+    password: "0SngoGnyZvxS"
+
+captive_portal:
+
+spi:
+  clk_pin: GPIO18
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
+
+cc1101:
+  id: rf_radio
+  cs_pin: GPIO5
+  frequency: 433.88MHz
+  modulation_type: ASK/OOK
+  symbol_rate: 5000
+  filter_bandwidth: 203kHz
+  output_power: 11
+
+remote_receiver:
+  pin: GPIO2
+  dump:
+    - rc_switch
+  tolerance: 25%
+  idle: 4ms
+  filter: 250us
+  buffer_size: 8kb
+  rmt_symbols: 256
+  receive_symbols: 256
+  filter_symbols: 48
+
+remote_transmitter:
+  id: rf_tx
+  pin: GPIO4
+  carrier_duty_percent: 100%
+  non_blocking: true
+  rmt_symbols: 256
+  on_transmit:
+    then:
+      - cc1101.set_idle:
+          id: rf_radio
+      - delay: 2ms
+      - cc1101.begin_tx:
+          id: rf_radio
+  on_complete:
+    then:
+      - cc1101.set_idle:
+          id: rf_radio
+      - delay: 2ms
+      - cc1101.begin_rx:
+          id: rf_radio
+
+globals:
+  - id: luz_nivel_prev
+    type: int
+    initial_value: "0"
+  - id: luz_color_prev
+    type: int
+    initial_value: "1"
+  # Último comando RF enviado: 0=apagado, 1-6=velocidad, 99=viento
+  - id: fan_rf_ultimo
+    type: int
+    initial_value: "0"
+  # Evita TX RF durante el arranque (on_state / outputs se disparan al boot)
+  - id: rf_ready
+    type: bool
+    initial_value: "false"
+
+script:
+  - id: flipper_raw_tx
+    parameters:
+      binraw_key: string
+      te_us: int
+    then:
+      - lambda: !lambda |-
+          std::string k;
+          k.reserve(binraw_key.size());
+          for (char c : binraw_key) {
+            if (c != '-') k += c;
+          }
+          std::string bits;
+          bits.reserve(k.size() * 4);
+          for (char ch : k) {
+            int v = (ch >= '0' && ch <= '9') ? (ch - '0') : (ch - 'A' + 10);
+            for (int i = 3; i >= 0; i--) bits += ((v >> i) & 1) ? '1' : '0';
+          }
+          std::vector<int32_t> pulses;
+          if (!bits.empty()) {
+            char cur = bits[0];
+            int count = 1;
+            for (size_t i = 1; i < bits.size(); i++) {
+              if (bits[i] == cur) {
+                count++;
+              } else {
+                int dur = count * te_us;
+                pulses.push_back(cur == '1' ? dur : -dur);
+                cur = bits[i];
+                count = 1;
+              }
+            }
+            int dur = count * te_us;
+            pulses.push_back(cur == '1' ? dur : -dur);
+          }
+          auto call = id(rf_tx).transmit();
+          call.get_data()->set_data(pulses);
+          call.set_send_times(12);
+          call.set_send_wait(50000);
+          call.perform();
+
+  # Siempre envía apagado RF (para automatizaciones cuando HA ya muestra OFF)
+  - id: ventilador_dormitorio_apagar_rf
+    mode: single
+    then:
+      - lambda: !lambda |-
+          id(fan_rf_ultimo) = 0;
+          id(flipper_raw_tx).execute("${fan_off_key}", ${fan_off_te});
+      - fan.turn_off:
+          id: fan_dormitorio
+
+output:
+  - platform: template
+    id: luz_br_out
+    type: float
+    write_action:
+      - lambda: !lambda |-
+          if (!id(rf_ready)) return;
+          float br = state;
+          int nivel = 0;
+          if (br > 0.01f) {
+            nivel = (int) (br * 9.0f + 0.5f);
+            if (nivel < 1) nivel = 1;
+            if (nivel > 9) nivel = 9;
+          }
+          if (nivel == id(luz_nivel_prev)) return;
+          if (nivel == 0) {
+            id(flipper_raw_tx).execute("${light_off_key}", ${light_off_te});
+            id(luz_nivel_prev) = 0;
+            return;
+          }
+          const char *key;
+          int te;
+          switch (nivel) {
+            case 1: key = "${light_l1_key}"; te = ${light_l1_te}; break;
+            case 2: key = "${light_l2_key}"; te = ${light_l2_te}; break;
+            case 3: key = "${light_l3_key}"; te = ${light_l3_te}; break;
+            case 4: key = "${light_l4_key}"; te = ${light_l4_te}; break;
+            case 5: key = "${light_l5_key}"; te = ${light_l5_te}; break;
+            case 6: key = "${light_l6_key}"; te = ${light_l6_te}; break;
+            case 7: key = "${light_l7_key}"; te = ${light_l7_te}; break;
+            case 8: key = "${light_l8_key}"; te = ${light_l8_te}; break;
+            default: key = "${light_l9_key}"; te = ${light_l9_te}; break;
+          }
+          id(flipper_raw_tx).execute(key, te);
+          id(luz_nivel_prev) = nivel;
+  - platform: template
+    id: luz_ct_out
+    type: float
+    write_action:
+      - lambda: !lambda |-
+          if (!id(rf_ready)) return;
+          if (id(luz_nivel_prev) == 0) return;
+          float ct = state;
+          int color = 1;
+          if (ct > 0.66f) color = 0;
+          else if (ct < 0.34f) color = 2;
+          else color = 1;
+          if (color == id(luz_color_prev)) return;
+          const char *key;
+          int te;
+          switch (color) {
+            case 0: key = "${light_warm_key}"; te = ${light_warm_te}; break;
+            case 2: key = "${light_cold_key}"; te = ${light_cold_te}; break;
+            default: key = "${light_neutral_key}"; te = ${light_neutral_te}; break;
+          }
+          id(flipper_raw_tx).execute(key, te);
+          id(luz_color_prev) = color;
+
+fan:
+  - platform: template
+    name: "Ventilador dormitorio"
+    id: fan_dormitorio
+    speed_count: 6
+    restore_mode: ALWAYS_OFF
+    preset_modes:
+      - Viento
+    # 0% = apagado RF, 1-6 = velocidades, preset Viento
+    on_state:
+      - lambda: !lambda |-
+          if (!id(rf_ready)) return;
+          int cmd;
+          if (!id(fan_dormitorio).state) {
+            cmd = 0;
+          } else if (id(fan_dormitorio).has_preset_mode() &&
+                     id(fan_dormitorio).get_preset_mode() == "Viento") {
+            cmd = 99;
+          } else {
+            cmd = id(fan_dormitorio).speed;
+          }
+          if (cmd == 0) {
+            if (id(fan_rf_ultimo) == 0) return;
+            id(fan_rf_ultimo) = 0;
+            id(flipper_raw_tx).execute("${fan_off_key}", ${fan_off_te});
+            return;
+          }
+          if (cmd == id(fan_rf_ultimo)) return;
+          id(fan_rf_ultimo) = cmd;
+          if (cmd == 99) {
+            id(flipper_raw_tx).execute("${fan_wind_key}", ${fan_wind_te});
+          } else {
+            const char *key;
+            int te;
+            switch (cmd) {
+              case 1: key = "${fan_s1_key}"; te = ${fan_s1_te}; break;
+              case 2: key = "${fan_s2_key}"; te = ${fan_s2_te}; break;
+              case 3: key = "${fan_s3_key}"; te = ${fan_s3_te}; break;
+              case 4: key = "${fan_s4_key}"; te = ${fan_s4_te}; break;
+              case 5: key = "${fan_s5_key}"; te = ${fan_s5_te}; break;
+              default: key = "${fan_s6_key}"; te = ${fan_s6_te}; break;
+            }
+            id(flipper_raw_tx).execute(key, te);
+          }
+
+light:
+  - platform: color_temperature
+    name: "Luz dormitorio"
+    id: luz_dormitorio
+    brightness: luz_br_out
+    color_temperature: luz_ct_out
+    cold_white_color_temperature: 6500 K
+    warm_white_color_temperature: 2700 K
+    gamma_correct: 0
+    restore_mode: ALWAYS_OFF
