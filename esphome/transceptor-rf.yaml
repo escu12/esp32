@@ -139,6 +139,57 @@ globals:
     type: int
     initial_value: "0"
 
+script:
+  - id: flipper_raw_tx
+    parameters:
+      binraw_key: string
+      te_us: int
+    then:
+      - lambda: !lambda |-
+          std::string k;
+          k.reserve(binraw_key.size());
+          for (char c : binraw_key) {
+            if (c != '-') k += c;
+          }
+          std::string bits;
+          bits.reserve(k.size() * 4);
+          for (char ch : k) {
+            int v = (ch >= '0' && ch <= '9') ? (ch - '0') : (ch - 'A' + 10);
+            for (int i = 3; i >= 0; i--) bits += ((v >> i) & 1) ? '1' : '0';
+          }
+          std::vector<int32_t> pulses;
+          if (!bits.empty()) {
+            char cur = bits[0];
+            int count = 1;
+            for (size_t i = 1; i < bits.size(); i++) {
+              if (bits[i] == cur) {
+                count++;
+              } else {
+                int dur = count * te_us;
+                pulses.push_back(cur == '1' ? dur : -dur);
+                cur = bits[i];
+                count = 1;
+              }
+            }
+            int dur = count * te_us;
+            pulses.push_back(cur == '1' ? dur : -dur);
+          }
+          auto call = id(rf_tx).transmit();
+          call.get_data()->set_data(pulses);
+          call.set_send_times(12);
+          call.set_send_wait(50000);
+          call.perform();
+
+  # Siempre envía apagado RF (para automatizaciones cuando HA ya muestra OFF)
+  - id: ventilador_dormitorio_apagar_rf
+    mode: single
+    then:
+      - lambda: !lambda |-
+          id(fan_rf_ultimo) = 0;
+          id(flipper_raw_tx).execute("${fan_off_key}", ${fan_off_te});
+      - fan.turn_off:
+          id: fan_dormitorio
+
 output:
   - platform: template
     id: luz_br_out
@@ -195,58 +246,6 @@ output:
           id(flipper_raw_tx).execute(key, te);
           id(luz_color_prev) = color;
 
-script:
-  - id: flipper_raw_tx
-    parameters:
-      binraw_key: string
-      te_us: int
-    then:
-      - lambda: !lambda |-
-          std::string k;
-          k.reserve(binraw_key.size());
-          for (char c : binraw_key) {
-            if (c != '-') k += c;
-          }
-          std::string bits;
-          bits.reserve(k.size() * 4);
-          for (char ch : k) {
-            int v = (ch >= '0' && ch <= '9') ? (ch - '0') : (ch - 'A' + 10);
-            for (int i = 3; i >= 0; i--) bits += ((v >> i) & 1) ? '1' : '0';
-          }
-          std::vector<int32_t> pulses;
-          if (!bits.empty()) {
-            char cur = bits[0];
-            int count = 1;
-            for (size_t i = 1; i < bits.size(); i++) {
-              if (bits[i] == cur) {
-                count++;
-              } else {
-                int dur = count * te_us;
-                pulses.push_back(cur == '1' ? dur : -dur);
-                cur = bits[i];
-                count = 1;
-              }
-            }
-            int dur = count * te_us;
-            pulses.push_back(cur == '1' ? dur : -dur);
-          }
-          auto call = id(rf_tx).transmit();
-          call.get_data()->set_data(pulses);
-          call.set_send_times(12);
-          call.set_send_wait(50000);
-          call.perform();
-
-  # Siempre envía apagado RF (para automatizaciones cuando HA ya muestra OFF)
-  - id: ventilador_dormitorio_apagar_rf
-    name: "Apagar ventilador dormitorio RF"
-    mode: single
-    then:
-      - lambda: !lambda |-
-          id(fan_rf_ultimo) = 0;
-          id(flipper_raw_tx).execute("${fan_off_key}", ${fan_off_te});
-      - fan.turn_off:
-          id: fan_dormitorio
-
 fan:
   - platform: template
     name: "Ventilador dormitorio"
@@ -255,7 +254,7 @@ fan:
     restore_mode: ALWAYS_OFF
     preset_modes:
       - Viento
-  # Un solo control: 0% / apagado = RF off, 1-6 = velocidades, preset Viento
+    # 0% = apagado RF, 1-6 = velocidades, preset Viento
     on_state:
       - lambda: !lambda |-
           int cmd;
