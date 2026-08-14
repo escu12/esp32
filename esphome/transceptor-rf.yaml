@@ -92,7 +92,7 @@ cc1101:
   modulation_type: ASK/OOK
   symbol_rate: 5000
   filter_bandwidth: 203kHz
-  output_power: 10
+  output_power: 11
 
 remote_receiver:
   pin: GPIO2
@@ -134,6 +134,10 @@ globals:
   - id: luz_color_prev
     type: int
     initial_value: "1"
+  # Último comando RF enviado: 0=apagado, 1-6=velocidad, 99=viento
+  - id: fan_rf_ultimo
+    type: int
+    initial_value: "0"
 
 output:
   - platform: template
@@ -228,9 +232,20 @@ script:
           }
           auto call = id(rf_tx).transmit();
           call.get_data()->set_data(pulses);
-          call.set_send_times(8);
+          call.set_send_times(12);
           call.set_send_wait(50000);
           call.perform();
+
+  # Siempre envía apagado RF (para automatizaciones cuando HA ya muestra OFF)
+  - id: ventilador_dormitorio_apagar_rf
+    name: "Apagar ventilador dormitorio RF"
+    mode: single
+    then:
+      - lambda: !lambda |-
+          id(fan_rf_ultimo) = 0;
+          id(flipper_raw_tx).execute("${fan_off_key}", ${fan_off_te});
+      - fan.turn_off:
+          id: fan_dormitorio
 
 fan:
   - platform: template
@@ -240,43 +255,38 @@ fan:
     restore_mode: ALWAYS_OFF
     preset_modes:
       - Viento
-    on_turn_off:
-      - script.execute:
-          id: flipper_raw_tx
-          binraw_key: "${fan_off_key}"
-          te_us: ${fan_off_te}
-    on_speed_set:
-      - script.execute:
-          id: flipper_raw_tx
-          binraw_key: !lambda |-
-            switch (x) {
-              case 1: return "${fan_s1_key}";
-              case 2: return "${fan_s2_key}";
-              case 3: return "${fan_s3_key}";
-              case 4: return "${fan_s4_key}";
-              case 5: return "${fan_s5_key}";
-              case 6: return "${fan_s6_key}";
-              default: return "${fan_s1_key}";
+  # Un solo control: 0% / apagado = RF off, 1-6 = velocidades, preset Viento
+    on_state:
+      - lambda: !lambda |-
+          int cmd;
+          if (!id(fan_dormitorio).state) {
+            cmd = 0;
+          } else if (id(fan_dormitorio).has_preset_mode() &&
+                     id(fan_dormitorio).get_preset_mode() == "Viento") {
+            cmd = 99;
+          } else {
+            cmd = id(fan_dormitorio).speed;
+          }
+          // Apagado: siempre enviar RF (automatizaciones pueden repetir OFF)
+          if (cmd != 0 && cmd == id(fan_rf_ultimo)) return;
+          id(fan_rf_ultimo) = cmd;
+          if (cmd == 0) {
+            id(flipper_raw_tx).execute("${fan_off_key}", ${fan_off_te});
+          } else if (cmd == 99) {
+            id(flipper_raw_tx).execute("${fan_wind_key}", ${fan_wind_te});
+          } else {
+            const char *key;
+            int te;
+            switch (cmd) {
+              case 1: key = "${fan_s1_key}"; te = ${fan_s1_te}; break;
+              case 2: key = "${fan_s2_key}"; te = ${fan_s2_te}; break;
+              case 3: key = "${fan_s3_key}"; te = ${fan_s3_te}; break;
+              case 4: key = "${fan_s4_key}"; te = ${fan_s4_te}; break;
+              case 5: key = "${fan_s5_key}"; te = ${fan_s5_te}; break;
+              default: key = "${fan_s6_key}"; te = ${fan_s6_te}; break;
             }
-          te_us: !lambda |-
-            switch (x) {
-              case 1: return ${fan_s1_te};
-              case 2: return ${fan_s2_te};
-              case 3: return ${fan_s3_te};
-              case 4: return ${fan_s4_te};
-              case 5: return ${fan_s5_te};
-              case 6: return ${fan_s6_te};
-              default: return ${fan_s1_te};
-            }
-    on_preset_set:
-      - if:
-          condition:
-            lambda: 'return x == "Viento";'
-          then:
-            - script.execute:
-                id: flipper_raw_tx
-                binraw_key: "${fan_wind_key}"
-                te_us: ${fan_wind_te}
+            id(flipper_raw_tx).execute(key, te);
+          }
 
 light:
   - platform: color_temperature
